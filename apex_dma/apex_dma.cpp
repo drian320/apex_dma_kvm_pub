@@ -558,16 +558,17 @@ void ClientActions() {
 
       if (g_settings.keyboard) {
         if (isPressed(g_settings.aimbot_hot_key_1) ||
-            (isPressed(g_settings.aimbot_hot_key_2) &&
-             !isPressed(
-                 g_settings.trigger_bot_hot_key))) // Left and Right click
+            isPressed(g_settings.aimbot_hot_key_2) ||
+            isPressed(g_settings.trigger_bot_hot_key) &&
+            !isPressed(112)) // Left and Right click
         {
           aiming = true;
         } else {
           aiming = false;
         }
         if (isPressed(g_settings.aimbot_hot_key_1) ||
-            !isPressed(g_settings.aimbot_hot_key_2)) {
+            !isPressed(g_settings.aimbot_hot_key_2) ||
+            isPressed(g_settings.trigger_bot_hot_key)) {
           max_fov = g_settings.non_ads_fov;
         }
         if (isPressed(g_settings.aimbot_hot_key_2)) {
