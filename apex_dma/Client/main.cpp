@@ -22,7 +22,6 @@ uint32_t check = 0xABCD;
 // Left and Right Aim key toggle
 extern bool active; // sync
 bool ready = false;
-extern bool aiming;     // read sync
 extern uint64_t g_Base; // write sync
 
 // tdm check
@@ -43,19 +42,18 @@ bool stormpoint = true;      // Set for map, ONLY ONE THO
 // Map number
 extern int map;
 
-extern int spectators;        // write sync
-extern int allied_spectators; // write sync
-extern bool valid;            // write sync
-extern bool next2;            // read write sync
+extern bool valid; // write sync
+extern bool next2; // read write sync
 
 Vector aim_target = Vector(0, 0, 0);
-extern bool lock;
+extern aimbot_state_t aimbot; // read
 
 extern bool overlay_t;
 
 extern std::vector<player> players;
 extern Matrix view_matrix_data;
 extern Vector esp_local_pos;
+std::vector<std::string> esp_spec_names;
 
 // Radar Code
 #define M_PI 3.14159265358979323846 // matches value in gcc v2 math.h
@@ -490,7 +488,6 @@ void Overlay::RenderEsp() {
   const auto g_settings = global_settings();
   if (g_Base != 0 && g_settings.esp) {
 
-    // memset(players, 0, sizeof(players));
     players.clear();
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -506,15 +503,16 @@ void Overlay::RenderEsp() {
       WorldToScreen(aim_target, view_matrix_data.matrix, getWidth(),
                     getHeight(), bs);
       const float indicator_radius = 10.0f;
-      ImColor indicator_color = lock ? ImColor(1.0f, 0.647f, 0.0f, 0.618f)
-                                     : ImColor(1.0f, 1.0f, 1.0f, 0.618f);
+      ImColor indicator_color = aimbot.lock
+                                    ? ImColor(1.0f, 0.647f, 0.0f, 0.618f)
+                                    : ImColor(1.0f, 1.0f, 1.0f, 0.618f);
       ImVec2 p1 = ImVec2(bs.x + indicator_radius, bs.y - indicator_radius);
       ImVec2 p2 = ImVec2(bs.x - indicator_radius, bs.y - indicator_radius);
       ImVec2 p3 = ImVec2(bs.x - indicator_radius, bs.y + indicator_radius);
       ImVec2 p4 = ImVec2(bs.x + indicator_radius, bs.y + indicator_radius);
       ImDrawList &draw_list = *ImGui::GetWindowDrawList();
       draw_list.AddRect(p2, p4, indicator_color, indicator_radius, 0, 1.6726f);
-      if (lock) {
+      if (aimbot.lock) {
         indicator_color = RED;
         draw_list.AddLine(p1, p3, indicator_color, 2.718f);
         draw_list.AddLine(p2, p4, indicator_color, 2.718f);
@@ -523,8 +521,8 @@ void Overlay::RenderEsp() {
 
     if (treasure_clues.size() > 0) {
       Vector bs_loot, bs_local;
-      WorldToScreen(esp_local_pos, view_matrix_data.matrix, getWidth(), getHeight(),
-                    bs_local);
+      WorldToScreen(esp_local_pos, view_matrix_data.matrix, getWidth(),
+                    getHeight(), bs_local);
       if (!(bs_local.x == 0 && bs_local.y == 0)) {
         for (size_t i = 0; i < treasure_clues.size(); i++) {
           TreasureClue clue = treasure_clues[i];
@@ -553,8 +551,12 @@ void Overlay::RenderEsp() {
       }
 
     if (next2 && valid) {
+      std::vector<std::string> tmp_spec_names;
 
       for (int i = 0; i < players.size(); i++) {
+        if (players[i].is_spectator) {
+          tmp_spec_names.push_back(players[i].name);
+        }
 
         if (players[i].health > 0) {
           std::string distance = std::to_string(players[i].dist / 39.62);
@@ -623,7 +625,9 @@ void Overlay::RenderEsp() {
             if (g_settings.esp_visuals.name)
               String(ImVec2(players[i].boxMiddle,
                             (players[i].b_y - players[i].height - 15)),
-                     ImColor(1.0f, 1.0f, 1.0f, alpha), players[i].name);
+                     players[i].is_love ? ImColor(231, 27, 100)
+                                        : ImColor(1.0f, 1.0f, 1.0f, alpha),
+                     players[i].name);
           }
           // Full Radar map, Need Manual setting of cords
           if (g_settings.main_radar_map == true)
@@ -634,6 +638,7 @@ void Overlay::RenderEsp() {
           // players[i].height - 15)), WHITE, players[i].name);
         }
       }
+      esp_spec_names = tmp_spec_names;
     }
     ImGui::End();
   }

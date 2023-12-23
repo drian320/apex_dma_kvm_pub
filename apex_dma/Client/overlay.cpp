@@ -4,6 +4,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <stdio.h>
+#include <vector>
 #define GL_SILENCE_DEPRECATION
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 #include <GLES2/gl2.h>
@@ -19,6 +20,8 @@
 #include <iomanip>
 #include <thread>
 
+#include "../Game.h"
+
 using namespace std;
 
 extern bool overlay_t;
@@ -29,11 +32,9 @@ extern float bulletspeed;
 extern float bulletgrav;
 
 // Aimbot
-extern bool lock;          // read lock state
-extern bool aimbot_safety; // read safety state
-extern float max_fov;
-extern int spectators;
-extern int allied_spectators;
+extern aimbot_state_t aimbot;                          // read aimbot state
+extern std::vector<Entity> spectators, allied_spectators; // read
+extern std::vector<string> esp_spec_names;
 // Left and Right Aim key toggle
 bool toggleaim = false;
 bool toggleaim2 = false;
@@ -177,8 +178,8 @@ void Overlay::RenderMenu() {
     ImGui::Dummy(ImVec2(0.0f, 2.0f));
     ImGui::Text(XorStr("Current:"));
     ImGui::SameLine();
-    ImGui::TextColored(GREEN, "%.f", max_fov);
-    ImGui::SliderFloat(XorStr("##max_fov"), &max_fov, 5.0f, 50.0f, "##");
+    ImGui::TextColored(GREEN, "%.f", aimbot.max_fov);
+    ImGui::SliderFloat(XorStr("##max_fov"), &aimbot.max_fov, 5.0f, 50.0f, "##");
     ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
     ImGui::Dummy(ImVec2(0.0f, 2.0f));
@@ -578,26 +579,26 @@ void Overlay::RenderInfo() {
                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                    ImGuiWindowFlags_NoScrollbar);
   DrawLine(ImVec2(1, 2), ImVec2(280, 2), RED, 2);
-  if (spectators == 0) {
-    ImGui::TextColored(GREEN, "%d", spectators);
+  if (spectators.size() == 0) {
+    ImGui::TextColored(GREEN, "%zu", spectators.size());
   } else {
-    ImGui::TextColored(RED, "%d", spectators);
+    ImGui::TextColored(RED, "%zu", spectators.size());
   }
   ImGui::SameLine();
   ImGui::Text("--");
   ImGui::SameLine();
-  ImGui::TextColored(GREEN, "%d", allied_spectators);
+  ImGui::TextColored(GREEN, "%zu", allied_spectators.size());
   ImGui::SameLine();
   ImGui::Text("--");
   ImGui::SameLine();
-  ImGui::TextColored(WHITE, "%.f", max_fov);
+  ImGui::TextColored(WHITE, "%.f", aimbot.max_fov);
   ImGui::SameLine();
   ImGui::Text("--");
   ImGui::SameLine();
   // Aim is on = 2, On but No Vis Check = 1, Off = 0
   const auto g_settings = global_settings();
-  if (lock) {
-    ImGui::TextColored(aimbot_safety ? GREEN : ORANGE, "[TARGET LOCK!]");
+  if (aimbot.lock) {
+    ImGui::TextColored(aimbot.gun_safety ? GREEN : ORANGE, "[TARGET LOCK!]");
   } else if (local_held_id == -251) {
     ImGui::TextColored(BLUE, "Skynade On");
   } else if (g_settings.aim == 2) {
@@ -609,11 +610,6 @@ void Overlay::RenderInfo() {
     ImGui::TextColored(RED, "Aim On %d", g_settings.aim);
   }
   ImGui::SameLine();
-  // if (triggerbot) {
-  //   ImGui::TextColored(GREEN, "1v1 On");
-  // } else {
-  //   ImGui::TextColored(RED, "1v1 Off");
-  // }
   DrawLine(ImVec2(1, 28), ImVec2(280, 28), RED, 2);
   ImGui::End();
 }
@@ -745,6 +741,17 @@ int Overlay::CreateOverlay() {
       if (g_settings.calc_game_fps) {
         ImGui::Text("Game average %.3f ms/frame (%.1f FPS)",
                     1000.0f / g_settings.game_fps, g_settings.game_fps);
+      }
+
+      ImGui::Dummy(ImVec2(0.0f, 5.0f));
+      if (esp_spec_names.size() > 0) {
+        const char *names[esp_spec_names.size()];
+        for (int i = 0; i < esp_spec_names.size(); i++) {
+          names[i] = esp_spec_names[i].c_str();
+        }
+        ImGui::ListBox("Spectators", 0, names, esp_spec_names.size());
+      } else {
+        ImGui::Text("No Spectators");
       }
 
       ImGui::End();

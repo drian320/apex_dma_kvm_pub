@@ -2,6 +2,17 @@
 
 #include <cstdint>
 
+typedef struct aimbot_state_t {
+  bool aiming = false;
+  bool gun_safety = true;
+  bool lock = false;
+  float max_fov = 10;
+  float target_score_max;
+  uintptr_t aimentity = 0;
+  uintptr_t tmp_aimentity = 0;
+  uintptr_t locked_aimentity = 0;
+} aimbot_state_t;
+
 typedef struct {
   bool box;
   bool line;
@@ -144,6 +155,8 @@ typedef struct {
   bool no_overlay;
   uint32_t screen_width;
   uint32_t screen_height;
+  bool yuan_p;
+  bool debug_mode;
   bool super_key;
   bool keyboard;
   bool gamepad;
@@ -159,7 +172,9 @@ typedef struct {
   bool item_glow;
   bool player_glow;
   bool player_glow_armor_color;
+  bool player_glow_love_user;
   bool weapon_model_glow;
+  bool kbd_backlight_control;
   bool deathbox;
   bool aim_no_recoil;
   float ads_fov;
@@ -218,6 +233,7 @@ typedef struct {
 extern "C" {
 void print_run_as_root();
 uint32_t add(uint32_t lhs, uint32_t rhs);
+bool kbd_backlight_blink(int32_t count);
 
 global_state_t __get_global_states();
 void __update_global_states(global_state_t state);
@@ -225,6 +241,8 @@ void __load_settings();
 bool save_settings();
 
 void run_tui_menu();
+
+bool check_love_player(uint64_t puid, uint64_t euid, const char *name);
 
 /**
  * https://github.com/CasualX/apexdream

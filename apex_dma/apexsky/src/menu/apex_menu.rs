@@ -1,5 +1,9 @@
 use super::{alert, prompt};
-use crate::{config, global_state::G_STATE, i18n::get_fluent_bundle, i18n_msg, i18n_msg_format};
+use crate::{
+    config, global_state::G_CONTEXT, i18n::get_fluent_bundle, i18n_msg, i18n_msg_format,
+    lock_config,
+};
+use chrono::Datelike;
 use fluent::{FluentArgs, FluentBundle, FluentResource};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -171,7 +175,7 @@ impl<'a> TerminalMenu<'a> {
         self.menu_level.retain(|&x| x != menu_level);
         self.menu_level.push(menu_level);
 
-        let data = G_STATE.lock().unwrap().settings.to_owned();
+        let data = lock_config!().settings.to_owned();
         let i18n_bundle = get_fluent_bundle();
         let mut new_menu_state = match self.get_menu_level() {
             MenuLevel::MainMenu => build_main_menu(i18n_bundle, data),
@@ -337,7 +341,7 @@ macro_rules! add_toggle_item {
             $builder,
             item_enabled($i18n_bundle, $label, $value),
             |_handle: &mut TerminalMenu| {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 settings.$x = !settings.$x;
                 None
             },
@@ -364,12 +368,12 @@ macro_rules! add_pick_item {
         MenuBuilder::add_item(
             $builder,
             ListItem::new(Line::from(vec![
-                Span::styled($label_prefix, Style::default().white()),
+                Span::from($label_prefix),
                 Span::styled(format!("{} ", label), Style::default().fg(pick_color)),
-                Span::styled(pick_mark, Style::default().white()),
+                Span::from(pick_mark),
             ])),
             |_handle: &mut TerminalMenu| {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 settings.loot.$x = !settings.loot.$x;
                 None
             },
@@ -395,13 +399,13 @@ macro_rules! add_colored_loot_item {
         MenuBuilder::add_item(
             $builder,
             ListItem::new(Line::from(vec![
-                Span::styled($label_prefix, Style::default().white()),
+                Span::from($label_prefix),
                 Span::styled(format!("{}: ", label), Style::default().fg(pick_color)),
                 Span::styled(format!("{} ", color_label), Style::default().fg(color)),
-                Span::styled(pick_mark, Style::default().white()),
+                Span::from(pick_mark),
             ])),
             |_handle: &mut TerminalMenu| {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 settings.loot.$x = !settings.loot.$x;
                 None
             },
@@ -425,7 +429,7 @@ impl<'a> Into<MenuState<'a>> for MenuBuilder<'a> {
 
 fn build_main_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, MainMenuTitle));
     menu = add_toggle_item!(
@@ -450,7 +454,7 @@ fn build_main_menu(
                 settings.keyboard,
             ),
             |_| {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 settings.keyboard = !settings.keyboard;
                 settings.gamepad = !settings.keyboard;
                 None
@@ -463,7 +467,7 @@ fn build_main_menu(
                 settings.gamepad,
             ),
             |_| {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 settings.gamepad = !settings.gamepad;
                 settings.keyboard = !settings.gamepad;
                 None
@@ -488,22 +492,25 @@ fn build_main_menu(
             format_item(
                 &i18n_bundle,
                 format!(" 7 - {}", i18n_msg!(i18n_bundle, MenuItemSmoothValue)),
-                Span::styled(
-                    format!("{}", settings.smooth),
-                    Style::default().fg(if settings.smooth < 90.0 {
-                        Color::Red
-                    } else if settings.smooth > 120.0 {
-                        Color::Green
-                    } else {
-                        Color::White
-                    }),
-                ),
+                if settings.smooth < 90.0 {
+                    Span::styled(
+                        format!("{}", settings.smooth),
+                        Style::default().fg(Color::Red),
+                    )
+                } else if settings.smooth > 120.0 {
+                    Span::styled(
+                        format!("{}", settings.smooth),
+                        Style::default().fg(Color::Green),
+                    )
+                } else {
+                    Span::from(format!("{}", settings.smooth))
+                },
             ),
             &i18n_msg!(i18n_bundle, InputPromptSmoothValue),
             |val| {
                 if let Some(new_val) = val.parse::<u16>().ok() {
                     if new_val >= 50 && new_val <= 500 {
-                        let settings = &mut G_STATE.lock().unwrap().settings;
+                        let settings = &mut lock_config!().settings;
                         settings.smooth = new_val.into();
                         settings.skynade_smooth = settings.smooth * 0.6667;
                         return None;
@@ -517,7 +524,7 @@ fn build_main_menu(
             format_item(
                 &i18n_bundle,
                 format!(" 8 - {}", i18n_msg!(i18n_bundle, MenuItemChangeBoneAim)),
-                Span::styled(
+                Span::from(
                     if settings.bone_nearest {
                         i18n_msg!(i18n_bundle, MenuValueBoneNearest)
                     } else if settings.bone_auto {
@@ -532,7 +539,6 @@ fn build_main_menu(
                         }
                     }
                     .to_string(),
-                    Style::new().white(),
                 ),
             ),
             &i18n_msg!(i18n_bundle, InputPromptBoneValue),
@@ -540,18 +546,18 @@ fn build_main_menu(
                 let i18n_bundle = get_fluent_bundle();
                 let val = val.trim();
                 if val == "x" {
-                    let settings = &mut G_STATE.lock().unwrap().settings;
+                    let settings = &mut lock_config!().settings;
                     settings.bone_auto = true;
                     settings.bone_nearest = false;
                     return None;
                 } else if val == "h" {
-                    let settings = &mut G_STATE.lock().unwrap().settings;
+                    let settings = &mut lock_config!().settings;
                     settings.bone_nearest = true;
                     settings.bone_auto = false;
                     return None;
                 } else if let Some(new_val) = val.parse::<u8>().ok() {
                     if vec![0, 1, 2, 3].contains(&new_val) {
-                        let settings = &mut G_STATE.lock().unwrap().settings;
+                        let settings = &mut lock_config!().settings;
                         settings.bone = new_val.into();
                         settings.bone_auto = false;
                         return None;
@@ -568,7 +574,7 @@ fn build_main_menu(
                 settings.loot_filled_toggle,
             ),
             |_| {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 settings.loot_filled_toggle = !settings.loot_filled_toggle;
                 settings.loot_filled = if settings.loot_filled_toggle { 14 } else { 0 };
                 None
@@ -581,7 +587,7 @@ fn build_main_menu(
                 settings.player_filled_toggle,
             ),
             |_| {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 settings.player_filled_toggle = !settings.player_filled_toggle;
                 settings.player_glow_inside_value =
                     if settings.player_filled_toggle { 14 } else { 0 };
@@ -597,7 +603,7 @@ fn build_main_menu(
             |val| {
                 let i18n_bundle = get_fluent_bundle();
                 if let Some(new_val) = val.parse::<u8>().ok() {
-                    let settings = &mut G_STATE.lock().unwrap().settings;
+                    let settings = &mut lock_config!().settings;
                     settings.player_glow_outline_size = new_val; //[0, 255]
                     return Some({
                         let mut args = FluentArgs::new();
@@ -622,16 +628,13 @@ fn build_main_menu(
             format_item(
                 &i18n_bundle,
                 format!("13 - {}", i18n_msg!(i18n_bundle, MenuItemChangeAdsFov)),
-                Span::styled(
-                    format!("{}", settings.ads_fov),
-                    Style::default().fg(Color::White),
-                ),
+                Span::from(format!("{}", settings.ads_fov)),
             ),
             &i18n_msg!(i18n_bundle, InputPromptAdsFov),
             |val| {
                 if let Some(new_val) = val.parse::<f32>().ok() {
                     if new_val >= 1.0 && new_val <= 50.0 {
-                        let settings = &mut G_STATE.lock().unwrap().settings;
+                        let settings = &mut lock_config!().settings;
                         settings.ads_fov = new_val;
                         return None;
                     }
@@ -644,16 +647,13 @@ fn build_main_menu(
             format_item(
                 &i18n_bundle,
                 format!("14 - {}", i18n_msg!(i18n_bundle, MenuItemChangeNonAdsFov)),
-                Span::styled(
-                    format!("{}", settings.non_ads_fov),
-                    Style::default().fg(Color::White),
-                ),
+                Span::from(format!("{}", settings.non_ads_fov)),
             ),
             &i18n_msg!(i18n_bundle, InputPromptNonAdsFov),
             |val| {
                 if let Some(new_val) = val.parse::<f32>().ok() {
                     if new_val >= 1.0 && new_val <= 50.0 {
-                        let settings = &mut G_STATE.lock().unwrap().settings;
+                        let settings = &mut lock_config!().settings;
                         settings.non_ads_fov = new_val;
                         return None;
                     }
@@ -697,9 +697,9 @@ fn build_main_menu(
                 item_text("18.5 -‌​‌‌​​​‌‌‌‍‌​‌‌​‌​​​‌‍‌​‌‌​​‌​‌‌‍‌​‌‌‌​‌​​‌‍‌​‌‌‌​‌​​‌‍‌​‌‌​‌‌‌‌‌‍‌​‌‌‌‌​​‌‌‍‌​‌‌​​​​‌‌‍‌​‌‌‌​​​​‌‍‌​‌‌​​‌​‌‌‍‌​‌‌‌‌​​​‌‍‌​‌‌‌​‌​​‌‍‌​‌‌‌​‌​‌‌‍‌​‌‌​‌​​‌‌‍‌​‌‌​‌‌​‌‌‍‌​‌‌​​‌​‌‌‍‌​‌‌​‌‌‌​‌‍‌​‌‌‌​‌​‌‌ ")
             },
             |_| {
-                let settings = &mut G_STATE.lock().unwrap();
-                settings.settings.load_settings = !settings.settings.load_settings;
-                if settings.settings.load_settings {
+                let config = &mut lock_config!();
+                config.settings.load_settings = !config.settings.load_settings;
+                if config.settings.load_settings {
                     None
                 } else {
                     let i18n_bundle = get_fluent_bundle();
@@ -742,12 +742,12 @@ fn build_main_menu(
             |_| {
                 let i18n_bundle = get_fluent_bundle();
                 let mut result = i18n_msg!(i18n_bundle, InfoLoaded).to_string();
-                let settings = crate::config::get_configuration().unwrap_or_else(|e| {
+                let config_state = crate::config::get_configuration().unwrap_or_else(|e| {
                     let i18n_bundle = get_fluent_bundle();
                     result = format!("{}\n{}", e, i18n_msg!(i18n_bundle, InfoFallbackConfig));
                     crate::config::Config::default()
                 });
-                G_STATE.lock().unwrap().settings = settings;
+                lock_config!() = config_state;
                 Some(result)
             },
         )
@@ -756,18 +756,17 @@ fn build_main_menu(
             format_item(
                 &i18n_bundle,
                 format!("23 - {}", i18n_msg!(i18n_bundle, MenuItemToggleNadeAim)),
-                Span::styled(
+                Span::from(
                     if settings.no_nade_aim {
                         i18n_msg!(i18n_bundle, MenuValueNoNadeAim)
                     } else {
                         i18n_msg!(i18n_bundle, MenuValueNadeAimOn)
                     }
                     .to_string(),
-                    Style::default().fg(Color::White),
                 ),
             ),
             |_| {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 settings.no_nade_aim = !settings.no_nade_aim;
                 None
             },
@@ -790,19 +789,16 @@ fn build_main_menu(
         format_item(
             &i18n_bundle,
             format!("26 - {}", i18n_msg!(i18n_bundle, MenuItemSetFpsPredict)),
-            Span::styled(
-                if settings.calc_game_fps {
-                    i18n_msg!(i18n_bundle, MenuValueCalcFps).to_string()
-                } else {
-                    format!("{:.1}", settings.game_fps)
-                },
-                Style::default().fg(Color::White),
-            ),
+            Span::from(if settings.calc_game_fps {
+                i18n_msg!(i18n_bundle, MenuValueCalcFps).to_string()
+            } else {
+                format!("{:.1}", settings.game_fps)
+            }),
         ),
         &i18n_msg!(i18n_bundle, InputPromptFpsPredict),
         |val| {
             if let Some(new_val) = val.parse::<u16>().ok() {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 if new_val == 0 {
                     settings.calc_game_fps = true;
                 } else if new_val > 0 && new_val <= 500 {
@@ -830,14 +826,24 @@ fn build_main_menu(
         settings.player_glow_armor_color,
         player_glow_armor_color
     );
+    menu = add_toggle_item!(
+        menu,
+        &i18n_bundle,
+        format!(
+            "29 - {}",
+            i18n_msg!(i18n_bundle, MenuItemFavoritePlayerGlow)
+        ),
+        settings.player_glow_love_user,
+        player_glow_love_user
+    );
     menu = menu.add_item(
         item_enabled(
             &i18n_bundle,
-            format!("29 - {}", i18n_msg!(i18n_bundle, MenuItemWeaponModelGlow)),
+            format!("30 - {}", i18n_msg!(i18n_bundle, MenuItemWeaponModelGlow)),
             settings.weapon_model_glow,
         ),
         |_handle: &mut TerminalMenu| {
-            let settings = &mut G_STATE.lock().unwrap().settings;
+            let settings = &mut lock_config!().settings;
             settings.weapon_model_glow = !settings.weapon_model_glow;
             if settings.weapon_model_glow {
                 let i18n_bundle = get_fluent_bundle();
@@ -847,18 +853,30 @@ fn build_main_menu(
             }
         },
     );
-    menu.next_id();
-    menu.next_id();
+    menu = menu.add_item(
+        item_enabled(
+            &i18n_bundle,
+            format!("31 - {}", i18n_msg!(i18n_bundle, MenuItemKbdBacklightCtrl)),
+            settings.kbd_backlight_control,
+        ),
+        |_handle: &mut TerminalMenu| {
+            let settings = &mut lock_config!().settings;
+            settings.kbd_backlight_control = !settings.kbd_backlight_control;
+            if settings.kbd_backlight_control {
+                if let Err(e) = G_CONTEXT.lock().unwrap().kbd_backlight_test() {
+                    return Some(e.to_string());
+                }
+            }
+            None
+        },
+    );
     menu.add_dummy_item()
         .add_item(
             format_item(
                 &i18n_bundle,
                 format!("32 - {}", i18n_msg!(i18n_bundle, MenuItemToggleOverlay)),
                 if settings.no_overlay {
-                    Span::styled(
-                        i18n_msg!(i18n_bundle, MenuValueNoOverlay).to_string(),
-                        Style::default().white(),
-                    )
+                    Span::from(i18n_msg!(i18n_bundle, MenuValueNoOverlay).to_string())
                 } else {
                     Span::styled(
                         i18n_msg!(i18n_bundle, MenuValueExternalOverlay).to_string(),
@@ -867,7 +885,7 @@ fn build_main_menu(
                 },
             ),
             |_| {
-                let settings = &mut G_STATE.lock().unwrap().settings;
+                let settings = &mut lock_config!().settings;
                 settings.no_overlay = !settings.no_overlay;
                 None
             },
@@ -877,7 +895,7 @@ fn build_main_menu(
 
 fn build_glow_color_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     fn parse_rgb(val: &String) -> Result<(f32, f32, f32), String> {
         let i18n_bundle = get_fluent_bundle();
@@ -959,7 +977,7 @@ fn build_glow_color_menu(
             &prompt_text_rgb!(i18n_bundle, ColorItemNotVizTarget),
             |val| match parse_rgb(&val) {
                 Ok((r, g, b)) => {
-                    let settings = &mut G_STATE.lock().unwrap().settings;
+                    let settings = &mut lock_config!().settings;
                     (
                         settings.glow_r_not,
                         settings.glow_g_not,
@@ -989,7 +1007,7 @@ fn build_glow_color_menu(
             &prompt_text_rgb!(i18n_bundle, ColorItemVizTarget),
             |val| match parse_rgb(&val) {
                 Ok((r, g, b)) => {
-                    let settings = &mut G_STATE.lock().unwrap().settings;
+                    let settings = &mut lock_config!().settings;
                     (
                         settings.glow_r_viz,
                         settings.glow_g_viz,
@@ -1022,7 +1040,7 @@ fn build_glow_color_menu(
             &prompt_text_rgb!(i18n_bundle, ColorItemKnockedTarget),
             |val| match parse_rgb(&val) {
                 Ok((r, g, b)) => {
-                    let settings = &mut G_STATE.lock().unwrap().settings;
+                    let settings = &mut lock_config!().settings;
                     (
                         settings.glow_r_knocked,
                         settings.glow_g_knocked,
@@ -1056,12 +1074,12 @@ fn build_glow_color_menu(
 
 fn build_hotkey_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     fn menu_item_keycode(label: String, value: i32) -> ListItem<'static> {
         ListItem::new(Line::from(vec![
             format_label(label),
-            Span::styled(format!("{}", value), Style::default().white().underlined()),
+            Span::styled(format!("{}", value), Style::default().underlined()),
         ]))
     }
     macro_rules! prompt_text_keycode {
@@ -1091,7 +1109,7 @@ fn build_hotkey_menu(
             &prompt_text_keycode!(i18n_bundle, HotkeyItemAimbot1),
             |val| {
                 if let Some(keycode) = val.parse::<u8>().ok() {
-                    let settings = &mut G_STATE.lock().unwrap().settings;
+                    let settings = &mut lock_config!().settings;
                     settings.aimbot_hot_key_1 = keycode as i32;
                     return None;
                 }
@@ -1107,7 +1125,7 @@ fn build_hotkey_menu(
             &prompt_text_keycode!(i18n_bundle, HotkeyItemAimbot2),
             |val| {
                 if let Some(keycode) = val.parse::<u8>().ok() {
-                    let settings = &mut G_STATE.lock().unwrap().settings;
+                    let settings = &mut lock_config!().settings;
                     settings.aimbot_hot_key_2 = keycode as i32;
                     return None;
                 }
@@ -1123,7 +1141,7 @@ fn build_hotkey_menu(
             &prompt_text_keycode!(i18n_bundle, HotkeyItemTriggerBot),
             |val| {
                 if let Some(keycode) = val.parse::<u8>().ok() {
-                    let settings = &mut G_STATE.lock().unwrap().settings;
+                    let settings = &mut lock_config!().settings;
                     settings.trigger_bot_hot_key = keycode as i32;
                     return None;
                 }
@@ -1155,7 +1173,7 @@ fn build_hotkey_menu(
 
 fn build_item_filter_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    _settings: config::Config,
+    _settings: config::Settings,
 ) -> MenuState<'static> {
     MenuBuilder::new()
         .title(i18n_msg!(i18n_bundle, ItemFilterMenuTitle))
@@ -1237,7 +1255,7 @@ fn build_item_filter_menu(
 
 fn build_light_weapons_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, LightWeaponsMenuTitle));
     menu = menu
@@ -1520,7 +1538,7 @@ fn build_light_weapons_menu(
 
 fn build_heavy_weapons_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, HeavyWeaponsMenuTitle));
     menu = menu
@@ -1795,7 +1813,7 @@ fn build_heavy_weapons_menu(
 
 fn build_energy_weapons_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, EnergyWeaponsMenuTitle));
     menu = menu
@@ -2070,7 +2088,7 @@ fn build_energy_weapons_menu(
 
 fn build_sniper_weapons_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, SniperWeaponsMenuTitle));
     menu = menu
@@ -2297,7 +2315,7 @@ fn build_sniper_weapons_menu(
 
 fn build_armors_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, ArmorsMenuTitle));
     menu = menu
@@ -2454,7 +2472,7 @@ fn build_armors_menu(
 
 fn build_healing_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, HealingItemsMenuTitle));
     menu = menu
@@ -2540,7 +2558,7 @@ fn build_healing_menu(
 
 fn build_nades_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, NadesMenuTitle));
     menu = menu
@@ -2599,7 +2617,7 @@ fn build_nades_menu(
 
 fn build_backpacks_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, BackpacksMenuTitle));
     menu = menu
@@ -2667,7 +2685,7 @@ fn build_backpacks_menu(
 
 fn build_scopes_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    settings: config::Config,
+    settings: config::Settings,
 ) -> MenuState<'static> {
     let mut menu = MenuBuilder::new().title(i18n_msg!(i18n_bundle, ScopesMenuTitle));
     menu = menu
@@ -2789,7 +2807,7 @@ fn build_scopes_menu(
 
 fn build_key_codes_menu(
     i18n_bundle: FluentBundle<FluentResource>,
-    _settings: config::Config,
+    _settings: config::Settings,
 ) -> MenuState<'static> {
     MenuBuilder::new()
         .title(i18n_msg!(i18n_bundle, HotkeyMenuTitle))
@@ -2906,6 +2924,7 @@ fn render_selected_list<'a>(
     selected_index: usize,
     scroll_top: usize,
 ) -> List<'a> {
+    let now = chrono::Local::now();
     List::new(
         list_items
             .iter()
@@ -2913,7 +2932,11 @@ fn render_selected_list<'a>(
             .enumerate()
             .map(|(index, item)| {
                 if index == selected_index - scroll_top {
-                    item.clone().on_light_yellow()
+                    if now.month() == 12 && now.day() == 25 {
+                        item.clone().white().bold().on_red()
+                    } else {
+                        item.clone().black().bold().on_light_yellow()
+                    }
                 } else {
                     item.clone()
                 }
@@ -2926,20 +2949,17 @@ fn format_label<T>(label: T) -> Span<'static>
 where
     T: Into<String>,
 {
-    Span::styled(
-        {
-            //format!("{: <40}", label.into())
-            const LABEL_SIZE: usize = 40;
-            let mut labal_text: String = label.into();
-            let label_width = UnicodeWidthStr::width(labal_text.as_str());
-            if label_width < LABEL_SIZE {
-                let space_count = LABEL_SIZE - label_width;
-                labal_text += &(" ".repeat(space_count));
-            }
-            labal_text
-        },
-        Style::default().fg(Color::White),
-    )
+    Span::from({
+        //format!("{: <40}", label.into())
+        const LABEL_SIZE: usize = 40;
+        let mut labal_text: String = label.into();
+        let label_width = UnicodeWidthStr::width(labal_text.as_str());
+        if label_width < LABEL_SIZE {
+            let space_count = LABEL_SIZE - label_width;
+            labal_text += &(" ".repeat(space_count));
+        }
+        labal_text
+    })
 }
 fn format_item<'a, T>(
     i18n_bundle: &FluentBundle<FluentResource>,
@@ -2963,15 +2983,14 @@ where
     ]))
 }
 fn span_enabled(i18n_bundle: &FluentBundle<FluentResource>, v: bool) -> Span<'static> {
-    Span::styled(
-        if v {
-            i18n_msg!(i18n_bundle, MenuValueEnabled)
-        } else {
-            i18n_msg!(i18n_bundle, MenuValueDisabled)
-        }
-        .to_string(),
-        Style::default().fg(if v { Color::Green } else { Color::White }),
-    )
+    if v {
+        Span::styled(
+            i18n_msg!(i18n_bundle, MenuValueEnabled).to_string(),
+            Style::default().fg(Color::Green),
+        )
+    } else {
+        Span::from(i18n_msg!(i18n_bundle, MenuValueDisabled).to_string())
+    }
 }
 fn item_enabled<T>(
     i18n_bundle: &FluentBundle<FluentResource>,
@@ -3010,8 +3029,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_menu() {
         super::super::main().unwrap();

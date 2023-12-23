@@ -272,6 +272,26 @@ void Entity::glow_weapon_model(uint64_t g_Base, bool enable_glow,
   // printf("0x270=%d\n", val1);
 }
 
+bool Entity::check_love_player(uint64_t entity_index) {
+  if (global_settings().yuan_p) {
+    if (this->isDummy())
+      return true;
+  } else {
+    if (!this->isPlayer())
+      return false;
+  }
+  uint64_t data_fid[4];
+  data_fid[0] = *((uint64_t *)(buffer + OFFSET_PLATFORM_UID + 0));
+  data_fid[1] = *((uint64_t *)(buffer + OFFSET_PLATFORM_UID + 4));
+  data_fid[2] = *((uint64_t *)(buffer + OFFSET_PLATFORM_UID + 16));
+  data_fid[3] = *((uint64_t *)(buffer + OFFSET_PLATFORM_UID + 20));
+  uint64_t platform_lid = data_fid[0] | data_fid[1] << 32;
+  uint64_t eadp_lid = data_fid[1] | data_fid[2] << 32;
+  char name[33] = {0};
+  this->get_name(g_Base, entity_index - 1, &name[0]);
+  return ::check_love_player(platform_lid, eadp_lid, name);
+}
+
 // Items
 bool Item::isItem() {
   char class_name[33] = {};
@@ -334,21 +354,22 @@ float CalculateFov(Entity &from, Entity &target) {
   return Math::GetFov(ViewAngles, Angle);
 }
 
-auto fun_calc_angles = [](Vector LocalCamera, Vector TargetBonePosition,
+auto fun_calc_angles = [](Vector LocalCameraPosition, Vector TargetBonePosition,
                           Vector targetVel, float BulletSpeed, float BulletGrav,
                           float deltaTime) {
   QAngle CalculatedAngles = QAngle(0, 0, 0);
   if (BulletSpeed > 1.f) {
 
     PredictCtx Ctx;
-    Ctx.StartPos = LocalCamera;
+    Ctx.StartPos = LocalCameraPosition;
     Ctx.TargetPos = TargetBonePosition;
     Ctx.BulletSpeed = BulletSpeed - (BulletSpeed * bulletspeed);
     Ctx.BulletGravity = BulletGrav + (BulletGrav * bulletgrav);
 
     // Add the target's velocity to the prediction context, with an offset
     // in the y direction
-    float distanceToTarget = (TargetBonePosition - LocalCamera).Length();
+    float distanceToTarget =
+        (TargetBonePosition - LocalCameraPosition).Length();
     float timeToTarget = distanceToTarget / BulletSpeed;
     Vector targetPosAhead = TargetBonePosition + (targetVel * timeToTarget);
     Ctx.TargetVel =
@@ -365,7 +386,7 @@ auto fun_calc_angles = [](Vector LocalCamera, Vector TargetBonePosition,
   }
 
   if (CalculatedAngles == QAngle(0, 0, 0))
-    CalculatedAngles = Math::CalcAngle(LocalCamera, TargetBonePosition);
+    CalculatedAngles = Math::CalcAngle(LocalCameraPosition, TargetBonePosition);
   return CalculatedAngles;
 };
 
@@ -488,7 +509,7 @@ QAngle CalculateBestBoneAim(Entity &from, Entity &target, float max_fov) {
     // printf("view_offset(%f,%f,%f)\n", view_offset.x, view_offset.y,
     //        view_offset.z);
     Vector view_origin = local_origin + view_offset;
-    Vector target_origin = target.getPosition();
+    Vector target_origin = target.getPosition() + targetVel * deltaTime;
     aim_target = target_origin;
     vector2d_t skynade_angles =
         skynade_angle(weap_id, weapon_mod_bitfield, BulletGrav / 750.0f,

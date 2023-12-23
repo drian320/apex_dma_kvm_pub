@@ -1,44 +1,51 @@
-use global_state::GlobalState;
+use std::ffi::CStr;
+
+use global_state::CGlobalState;
 
 mod config;
 mod global_state;
+mod i18n;
+mod love_players;
 mod math;
 mod menu;
 mod pitches;
 mod skynade;
-mod i18n;
+mod system;
 
 #[macro_use]
 extern crate lazy_static;
 
+use global_state::G_CONTEXT;
 use global_state::G_STATE;
 
+// state sync
+
 #[no_mangle]
-pub extern "C" fn __get_global_states() -> GlobalState {
-    G_STATE.lock().unwrap().to_owned()
+pub extern "C" fn __get_global_states() -> CGlobalState {
+    G_STATE.lock().unwrap().to_owned().into()
 }
 
 #[no_mangle]
-pub extern "C" fn __update_global_states(state: GlobalState) {
-    *G_STATE.lock().unwrap() = state;
+pub extern "C" fn __update_global_states(state: CGlobalState) {
+    let global_state = &mut G_STATE.lock().unwrap();
+    global_state.config.settings = state.settings;
+    global_state.terminal_t = state.terminal_t;
 }
 
 // config
 
 #[no_mangle]
 pub extern "C" fn __load_settings() {
-    let settings = crate::config::get_configuration().unwrap_or_else(|e| {
+    lock_config!() = crate::config::get_configuration().unwrap_or_else(|e| {
         println!("{}", e);
         println!("Fallback to defalut configuration.");
         crate::config::Config::default()
     });
-    G_STATE.lock().unwrap().settings = settings;
 }
 
 #[no_mangle]
 pub extern "C" fn save_settings() -> bool {
-    let settings = G_STATE.lock().unwrap().settings.to_owned();
-    crate::config::save_configuration(settings)
+    crate::config::save_configuration(lock_config!().to_owned())
         .map(|()| true)
         .unwrap_or_else(|e| {
             println!("{}", e);
@@ -55,6 +62,15 @@ pub extern "C" fn run_tui_menu() {
     });
 }
 
+// love player
+
+#[no_mangle]
+pub extern "C" fn check_love_player(puid: u64, euid: u64, name: *const i8) -> bool {
+    let c_str = unsafe { CStr::from_ptr(name) };
+    let name_str = c_str.to_string_lossy();
+    love_players::check_my_heart(&mut lock_config!(), puid, euid, &name_str)
+}
+
 // misc
 
 #[no_mangle]
@@ -65,6 +81,18 @@ pub extern "C" fn add(left: usize, right: usize) -> usize {
 #[no_mangle]
 pub extern "C" fn print_run_as_root() {
     println!("Please run as root!");
+}
+
+#[no_mangle]
+pub extern "C" fn kbd_backlight_blink(count: i32) -> bool {
+    if count < 1 || count > 10 || !lock_config!().settings.kbd_backlight_control {
+        return false;
+    }
+    (|| -> anyhow::Result<()> {
+        G_CONTEXT.lock().unwrap().kbd_blink(count.try_into()?)?;
+        Ok(())
+    })()
+    .is_ok()
 }
 
 // skynade
