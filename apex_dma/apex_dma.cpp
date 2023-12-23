@@ -470,10 +470,10 @@ void ClientActions() {
       }
 
       if (g_settings.keyboard) {
-        if (isPressed(g_settings.aimbot_hot_key_1) ||
+        if ((isPressed(g_settings.aimbot_hot_key_1) ||
             isPressed(g_settings.aimbot_hot_key_2) ||
-            isPressed(g_settings.trigger_bot_hot_key) &&
-            !isPressed(112)) // Left and Right click
+            isPressed(g_settings.trigger_bot_hot_key)) &&
+            (!isPressed(112))) // Left and Right click
         {
           aimbot.aiming = true;
         } else {
@@ -482,7 +482,7 @@ void ClientActions() {
         if (isPressed(g_settings.aimbot_hot_key_1) ||
             !isPressed(g_settings.aimbot_hot_key_2) ||
             isPressed(g_settings.trigger_bot_hot_key)) {
-          max_fov = g_settings.non_ads_fov;
+              aimbot.max_fov = g_settings.non_ads_fov;
         }
         if (isPressed(g_settings.aimbot_hot_key_2)) {
           aimbot.max_fov = g_settings.ads_fov;
